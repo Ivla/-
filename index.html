@@ -168,6 +168,140 @@
 </script>
 </body>
 </html>
+    // pRight 是球往右跳的機率
+    const pRight = 0.508; 
+
+    const binCounts = new Array(13).fill(0);
+    const slotWidth = WIDTH / 13;
+    let totalScore = 0;
+    let ballCount = 0;
+    let isPressing = false;
+    let lastShootTime = 0;
+
+    const engine = Engine.create();
+    engine.gravity.y = 1.5; // 增加重力讓運動更果斷
+
+    const render = Render.create({
+        element: document.getElementById('game-container'),
+        engine: engine,
+        options: { width: WIDTH, height: HEIGHT, wireframes: false, background: '#0a0a0a' }
+    });
+
+    // 邊界牆
+    const wallOptions = { isStatic: true, render: { fillStyle: '#222' } };
+    Composite.add(engine.world, [
+        Bodies.rectangle(-2, HEIGHT/2, 4, HEIGHT, wallOptions),
+        Bodies.rectangle(WIDTH + 2, HEIGHT/2, 4, HEIGHT, wallOptions)
+    ]);
+
+    // 撞針生成
+    for (let r = 0; r < ROWS; r++) {
+        const pinCount = r + 1;
+        const rowWidth = (pinCount - 1) * slotWidth;
+        const startX = (WIDTH - rowWidth) / 2;
+        const y = 150 + (r * 45);
+
+        for (let i = 0; i < pinCount; i++) {
+            const x = startX + i * slotWidth;
+            const pin = Bodies.circle(x, y, PIN_RADIUS, {
+                isStatic: true,
+                label: 'pin',
+                render: { fillStyle: '#555' }
+            });
+            Composite.add(engine.world, pin);
+        }
+    }
+
+    // 底部格子
+    SCORES.forEach((score, i) => {
+        const x = i * slotWidth + slotWidth / 2;
+        if (i > 0) {
+            Composite.add(engine.world, Bodies.rectangle(i * slotWidth, HEIGHT - 60, 2, 120, { isStatic: true, render: { fillStyle: '#333' } }));
+        }
+        const sensor = Bodies.rectangle(x, HEIGHT - 15, slotWidth - 4, 30, {
+            isStatic: true, isSensor: true, label: `bin-${i}-${score}`, render: { fillStyle: 'transparent' }
+        });
+        Composite.add(engine.world, sensor);
+    });
+
+    // 發射邏輯
+    function spawnBall() {
+        const x = WIDTH / 2 + (Math.random() * 1 - 0.5); 
+        const ball = Bodies.circle(x, 50, BALL_RADIUS, {
+            restitution: 0.1, // 極低彈性
+            friction: 0,
+            frictionAir: 0.02,
+            label: 'ball',
+            render: { fillStyle: '#ffcc00' }
+        });
+        Composite.add(engine.world, ball);
+        ballCount++;
+        document.getElementById('ball-count').innerText = ballCount;
+    }
+
+    // --- 關鍵修改：強制導向碰撞邏輯 ---
+    Events.on(engine, 'collisionStart', (event) => {
+        event.pairs.forEach(pair => {
+            const labels = [pair.bodyA.label, pair.bodyB.label];
+            
+            // 如果球撞到撞針
+            if (labels.includes('ball') && labels.includes('pin')) {
+                const ball = pair.bodyA.label === 'ball' ? pair.bodyA : pair.bodyB;
+                
+                // 決定方向：加權機率決定左或右
+                const direction = Math.random() < pRight ? 1 : -1;
+                
+                // 強制賦予水平速度與垂直下墜力，確保它能撞到下一層
+                Body.setVelocity(ball, { 
+                    x: direction * (slotWidth / 10), 
+                    y: 5 
+                });
+                
+                // 稍微偏移球的位置防止卡住
+                Body.setPosition(ball, {
+                    x: ball.position.x + (direction * 2),
+                    y: ball.position.y + 2
+                });
+            }
+
+            // 如果掉進得分區
+            const binTag = labels.find(l => l && l.startsWith('bin-'));
+            const ballBody = pair.bodyA.label === 'ball' ? pair.bodyA : (pair.bodyB.label === 'ball' ? pair.bodyB : null);
+
+            if (binTag && ballBody) {
+                const parts = binTag.split('-');
+                const points = parseInt(parts[2]);
+                binCounts[parseInt(parts[1])]++;
+                totalScore += points;
+                
+                document.getElementById('current-score').innerText = totalScore.toLocaleString();
+                document.getElementById('avg-score').innerText = (totalScore / ballCount).toFixed(2);
+                Composite.remove(engine.world, ballBody);
+            }
+        });
+    });
+
+    // 操作監聽
+    const startAction = () => { isPressing = true; spawnBall(); lastShootTime = Date.now(); };
+    const stopAction = () => { isPressing = false; };
+
+    window.addEventListener('mousedown', startAction);
+    window.addEventListener('mouseup', stopAction);
+    window.addEventListener('touchstart', (e) => { e.preventDefault(); startAction(); }, { passive: false });
+    window.addEventListener('touchend', stopAction);
+
+    Events.on(engine, 'beforeUpdate', () => {
+        if (isPressing && Date.now() - lastShootTime >= 500) {
+            spawnBall();
+            lastShootTime = Date.now();
+        }
+    });
+
+    Render.run(render);
+    Runner.run(Runner.create(), engine);
+</script>
+</body>
+</html>
     let lastShootTime = 0;
 
     const engine = Engine.create();
