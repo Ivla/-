@@ -2,18 +2,23 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>常態分布彈珠檯 - 尺寸彈性調整版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>常態分布彈珠檯 - 長按連發版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
+        /* 防止手機長按選取文字或跳出選單 */
+        * { touch-action: none; user-select: none; -webkit-tap-highlight-color: transparent; }
         body { margin: 0; overflow: hidden; background: #111; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
         #score-board { color: #00ffcc; font-size: 32px; font-weight: bold; margin: 15px; }
-        canvas { box-shadow: 0 0 40px rgba(0,0,0,0.8); border: 2px solid #444; }
+        canvas { box-shadow: 0 0 40px rgba(0,0,0,0.8); border: 2px solid #444; max-width: 100%; height: auto; }
+        .hint { color: #666; font-size: 14px; margin-top: 5px; }
     </style>
 </head>
 <body>
 
     <div id="score-board">SCORE: <span id="current-score">0</span></div>
     <div id="game-container"></div>
+    <div class="hint">按住滑鼠或螢幕 0.5秒連發</div>
 
 <script>
     const { Engine, Render, Runner, Bodies, Composite, Events } = Matter;
@@ -21,15 +26,14 @@
     const WIDTH = 600; 
     const HEIGHT = 850;
     const ROWS = 13;
-    const BALL_RADIUS = 4.9; // 7 * 0.7 = 4.9 (尺寸縮小至 70%)
+    const BALL_RADIUS = 4.9; // 尺寸縮小至 70%
     const PIN_RADIUS = 4;
     const SCORES = [100, 25, 25, 10, 10, 5, 1, 5, 10, 10, 25, 25, 100];
     const binCounts = new Array(13).fill(0);
-    
     const slotWidth = WIDTH / 13;
 
     let totalScore = 0;
-    let isMouseDown = false;
+    let isPressing = false; // 統一管理按壓狀態
     let lastShootTime = 0;
 
     const engine = Engine.create();
@@ -39,130 +43,16 @@
         options: { width: WIDTH, height: HEIGHT, wireframes: false, background: '#0f0f0f' }
     });
 
-    // --- 1. 建立邊界牆 ---
+    // --- 1. 邊界牆 ---
     const wallOptions = { isStatic: true, render: { fillStyle: '#333' }, restitution: 0.8 };
     Composite.add(engine.world, [
         Bodies.rectangle(-2, HEIGHT/2, 4, HEIGHT, wallOptions),
         Bodies.rectangle(WIDTH + 2, HEIGHT/2, 4, HEIGHT, wallOptions)
     ]);
 
-    // --- 2. 生成正三角形撞針陣列 ---
+    // --- 2. 撞針陣列 ---
     for (let r = 0; r < ROWS; r++) {
         const pinCount = r + 1;
-        const rowWidth = (pinCount - 1) * slotWidth;
-        const startX = (WIDTH - rowWidth) / 2;
-        const y = 150 + (r * 42);
-
-        for (let i = 0; i < pinCount; i++) {
-            const x = startX + i * slotWidth;
-            Composite.add(engine.world, Bodies.circle(x, y, PIN_RADIUS, {
-                isStatic: true,
-                render: { fillStyle: '#888' },
-                friction: 0,
-                restitution: 0.6 // 撞針彈性維持原樣或可視需求微調
-            }));
-        }
-    }
-
-    // --- 3. 底部 13 格得分區 ---
-    SCORES.forEach((score, i) => {
-        const x = i * slotWidth + slotWidth / 2;
-        const wallX = i * slotWidth;
-
-        if (i > 0) {
-            Composite.add(engine.world, Bodies.rectangle(wallX, HEIGHT - 60, 2, 120, { 
-                isStatic: true, render: { fillStyle: '#444' } 
-            }));
-        }
-
-        const sensor = Bodies.rectangle(x, HEIGHT - 15, slotWidth - 4, 30, {
-            isStatic: true, isSensor: true, label: `bin-${i}-${score}`,
-            render: { fillStyle: 'transparent' }
-        });
-        Composite.add(engine.world, sensor);
-    });
-
-    // --- 4. 統計長條圖與分數渲染 ---
-    Events.on(render, 'afterRender', () => {
-        const ctx = render.context;
-        const maxBalls = Math.max(...binCounts, 1);
-        binCounts.forEach((count, i) => {
-            const x = i * slotWidth;
-            const barHeight = (count / maxBalls) * 100;
-            ctx.fillStyle = "rgba(0, 255, 204, 0.2)";
-            ctx.fillRect(x + 2, HEIGHT - 120 - barHeight, slotWidth - 4, barHeight);
-            
-            ctx.fillStyle = "#fff";
-            ctx.font = "bold 12px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText(SCORES[i], x + slotWidth/2, HEIGHT - 30);
-        });
-    });
-
-    // --- 5. 遊戲邏輯 ---
-    function spawnBall() {
-        const x = WIDTH / 2 + (Math.random() * 0.2 - 0.1); 
-        const ball = Bodies.circle(x, 50, BALL_RADIUS, {
-            restitution: 0.3, // 0.6 * 0.5 = 0.3 (彈性降低 50%)
-            friction: 0,
-            frictionAir: 0.005,
-            label: 'ball',
-            render: { fillStyle: '#ffcc00' }
-        });
-        Composite.add(engine.world, ball);
-    }
-
-    window.addEventListener('mousedown', (e) => {
-        if(e.button === 0) { isMouseDown = true; spawnBall(); lastShootTime = Date.now(); }
-    });
-    window.addEventListener('mouseup', () => isMouseDown = false);
-
-    Events.on(engine, 'beforeUpdate', () => {
-        if (isMouseDown && Date.now() - lastShootTime >= 500) {
-            spawnBall();
-            lastShootTime = Date.now();
-        }
-    });
-
-    Events.on(engine, 'collisionStart', (event) => {
-        event.pairs.forEach(pair => {
-            const labels = [pair.bodyA.label, pair.bodyB.label];
-            const binTag = labels.find(l => l && l.startsWith('bin-'));
-            const ballBody = pair.bodyA.label === 'ball' ? pair.bodyA : (pair.bodyB.label === 'ball' ? pair.bodyB : null);
-
-            if (binTag && ballBody) {
-                const parts = binTag.split('-');
-                binCounts[parseInt(parts[1])]++;
-                totalScore += parseInt(parts[2]);
-                document.getElementById('current-score').innerText = totalScore.toLocaleString();
-                Composite.remove(engine.world, ballBody);
-            }
-        });
-    });
-
-    Render.run(render);
-    Runner.run(Runner.create(), engine);
-</script>
-</body>
-</html>
-    const render = Render.create({
-        element: document.getElementById('game-container'),
-        engine: engine,
-        options: { width: WIDTH, height: HEIGHT, wireframes: false, background: '#0f0f0f' }
-    });
-
-    // --- 1. 建立邊界牆 (剛好貼合最左與最右格子的邊緣) ---
-    const wallOptions = { isStatic: true, render: { fillStyle: '#333' }, restitution: 0.8 };
-    Composite.add(engine.world, [
-        Bodies.rectangle(-2, HEIGHT/2, 4, HEIGHT, wallOptions), // 左牆
-        Bodies.rectangle(WIDTH + 2, HEIGHT/2, 4, HEIGHT, wallOptions) // 右牆
-    ]);
-
-    // --- 2. 生成正三角形撞針陣列 ---
-    // 為了讓 100 分有機會，金字塔必須隨層數變寬，且最後一層要與格子邊界對齊
-    for (let r = 0; r < ROWS; r++) {
-        const pinCount = r + 1;
-        // 計算這一層的起始點，讓撞針精確對準格子的分界線或中心
         const rowWidth = (pinCount - 1) * slotWidth;
         const startX = (WIDTH - rowWidth) / 2;
         const y = 150 + (r * 42);
@@ -178,19 +68,15 @@
         }
     }
 
-    // --- 3. 底部 13 格得分區 ---
+    // --- 3. 底部得分區 ---
     SCORES.forEach((score, i) => {
         const x = i * slotWidth + slotWidth / 2;
         const wallX = i * slotWidth;
-
-        // 格子隔板 (僅在下方)
-        if (i > 0) { // 不畫最左邊的牆，因為有外牆了
+        if (i > 0) {
             Composite.add(engine.world, Bodies.rectangle(wallX, HEIGHT - 60, 2, 120, { 
                 isStatic: true, render: { fillStyle: '#444' } 
             }));
         }
-
-        // 得分感應器
         const sensor = Bodies.rectangle(x, HEIGHT - 15, slotWidth - 4, 30, {
             isStatic: true, isSensor: true, label: `bin-${i}-${score}`,
             render: { fillStyle: 'transparent' }
@@ -198,7 +84,7 @@
         Composite.add(engine.world, sensor);
     });
 
-    // --- 4. 統計長條圖與分數渲染 ---
+    // --- 4. 分佈統計渲染 ---
     Events.on(render, 'afterRender', () => {
         const ctx = render.context;
         const maxBalls = Math.max(...binCounts, 1);
@@ -207,7 +93,6 @@
             const barHeight = (count / maxBalls) * 100;
             ctx.fillStyle = "rgba(0, 255, 204, 0.2)";
             ctx.fillRect(x + 2, HEIGHT - 120 - barHeight, slotWidth - 4, barHeight);
-            
             ctx.fillStyle = "#fff";
             ctx.font = "bold 12px Arial";
             ctx.textAlign = "center";
@@ -215,12 +100,11 @@
         });
     });
 
-    // --- 5. 遊戲邏輯 ---
+    // --- 5. 發射邏輯 ---
     function spawnBall() {
-        // 從頂端正中間落下
         const x = WIDTH / 2 + (Math.random() * 0.2 - 0.1); 
         const ball = Bodies.circle(x, 50, BALL_RADIUS, {
-            restitution: 0.6,
+            restitution: 0.3, // 彈性降低 50%
             friction: 0,
             frictionAir: 0.005,
             label: 'ball',
@@ -229,18 +113,41 @@
         Composite.add(engine.world, ball);
     }
 
-    window.addEventListener('mousedown', (e) => {
-        if(e.button === 0) { isMouseDown = true; spawnBall(); lastShootTime = Date.now(); }
-    });
-    window.addEventListener('mouseup', () => isMouseDown = false);
+    // --- 6. 事件處理 (支援手機與電腦長按) ---
 
+    // 開始按壓
+    const handleStart = (e) => {
+        if (e.type === 'mousedown' && e.button !== 0) return; // 滑鼠非左鍵不觸發
+        isPressing = true;
+        spawnBall(); // 點擊當下立刻發射第一顆
+        lastShootTime = Date.now();
+    };
+
+    // 停止按壓
+    const handleEnd = () => {
+        isPressing = false;
+    };
+
+    // 電腦端監聽
+    window.addEventListener('mousedown', handleStart);
+    window.addEventListener('mouseup', handleEnd);
+
+    // 手機端監聽
+    window.addEventListener('touchstart', handleStart, { passive: false });
+    window.addEventListener('touchend', handleEnd);
+
+    // 每一幀檢查是否需要連發 (0.5秒)
     Events.on(engine, 'beforeUpdate', () => {
-        if (isMouseDown && Date.now() - lastShootTime >= 500) {
-            spawnBall();
-            lastShootTime = Date.now();
+        if (isPressing) {
+            const now = Date.now();
+            if (now - lastShootTime >= 500) { 
+                spawnBall();
+                lastShootTime = now;
+            }
         }
     });
 
+    // 碰撞得分
     Events.on(engine, 'collisionStart', (event) => {
         event.pairs.forEach(pair => {
             const labels = [pair.bodyA.label, pair.bodyB.label];
